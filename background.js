@@ -20,11 +20,11 @@ chrome.runtime.onConnect.addListener((port) => {
     port.onMessage.addListener((msg) => {
       console.log("Received:", msg);
 
-      fresh = msg.fresh;
-      infection = msg.infection;
-      decay = msg.decay;
-      rotten = msg.rotten;
-      console.log(fresh, infection, decay, rotten);
+      fresh = Number(msg.fresh);
+      infection = Number(msg.infection);
+      decay = Number(msg.decay);
+      rotten = Number(msg.rotten);
+      console.log("onConnect ", fresh, infection, decay, rotten);
     });
   }
 });
@@ -59,6 +59,11 @@ async function setTabState() {
       continue
     }
     let tabInfo = tabInfos[tabIdStr]
+
+    if (String(tabInfo.url).startsWith("chrome:")){
+      console.log("setTabState Ignore tab ", tabInfo.url)
+      continue
+    }
     let state = getState(tabInfo.openedTime, currentTime)
     console.log("setTabState ", tabIdStr, state, tabInfo.state, tab.favIconUrl, tabInfo.openedTime, currentTime)
 
@@ -82,9 +87,19 @@ async function setTabState() {
   }
 }
 
+function getUrlHostname(url){
+  try {
+    return new URL(String(url)).hostname
+  } catch (error) {
+    console.log("Failed to get hostname for ", url, error)
+    return ""
+  }
+}
+
+
  async function getOldestTabOpenTime(url){
 
-  let urlInfo = await getStorageLocal(url)
+  let urlInfo = await getStorageLocal(getUrlHostname(url))
   if (!urlInfo){
     console.log("getOldestTabOpenTime is not present", urlInfo, url)
     return Date.now()
@@ -102,9 +117,28 @@ async function setTabState() {
   return oldestOpenTime
 }
 
- async function addUrlToLocal(urlName, tabId, openedTime){
+async function removeUrlToLocal(url, tabId){
 
-  let url = String(urlName)
+  const urlStr = getUrlHostname(url)
+  let tabUrlInfo = await getStorageLocal(urlStr)
+  console.log("addUrlToLocal start", tabUrlInfo)
+  if (!tabUrlInfo){
+    return
+  }
+
+  delete tabUrlInfo[tabId]
+
+  console.log("removeUrlToLocal", tabUrlInfo, urlStr, tabId)
+
+  if (Object.keys(tabUrlInfo).length == 0)
+    await removeStorageLocl(urlStr)
+  else
+    await setStorageLocal({[urlStr]: tabUrlInfo})
+}
+
+ async function addUrlToLocal(urlStr, tabId, openedTime){
+
+  const url = getUrlHostname(urlStr)
   let tabUrlInfo = await getStorageLocal(url)
   console.log("addUrlToLocal start", tabUrlInfo)
   if (!tabUrlInfo){
@@ -154,11 +188,27 @@ async function getStorageLocal(key) {
   }
 }
 
+async function removeStorageLocl(items) {
+  try {
+    await chrome.storage.local.remove(items)
+  } catch (error) {
+    console.error("Failed to remove data to local storage:", error);
+  }
+}
+
 async function setStorageSession(items) {
   try {
     await chrome.storage.session.set(items)
   } catch (error) {
     console.error("Failed to save data to session storage:", error);
+  }
+}
+
+async function removeStorageSession(items) {
+  try {
+    await chrome.storage.session.remove(items)
+  } catch (error) {
+    console.error("Failed to remove data to session storage:", error);
   }
 }
 
@@ -233,7 +283,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 });
 
 chrome.tabs.onCreated.addListener(async (tab) => {
-  //chrome.storage.local.clear();
+  
   
   let currentTime = Date.now()
   let openedTime
@@ -278,13 +328,14 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
       console.log("onUpdated tabInfo is null for tab", tabId, tabInfo)
       return
     } 
-    console.log("onUpdated urls ", tabInfo.url, tab.url)
+    console.log("onUpdated urls ", tabIdStr, tabInfo.url, tab.url)
 
     if (tabInfo.url !== tab.url){
-
+      await removeUrlToLocal(tabInfo.url, tabIdStr)
       //TODO Check local and delete the local tab url
       tabInfo.url = tab.url
       tabInfo.openedTime = Date.now()
+      
       
       await addUrlToLocal(tab.url, tabId, tabInfo.openedTime)
       await setStorageSession({[tabIdStr]: tabInfo})
@@ -296,9 +347,19 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 chrome.tabs.onRemoved.addListener(async (tab) => {
   console.log("onRemoved tab ", tab)
 
+  const tabIdStr = String(tab)
+  let tabInfo = await getStorageSession(tabIdStr)
+  if (!tabInfo) {
+    console.log("onRemoved tabInfo is null for tab", tab, tabInfo)
+    return
+  } 
+
+  await removeUrlToLocal(tabInfo.url, tabIdStr)
+  await removeStorageSession(tabIdStr)
+  
   //allTabs.delete(tab.tabId)
 
-  const key = `${STORAGE_KEY_PREFIX}${tab.id}`;
+const key = `${STORAGE_KEY_PREFIX}${tabIdStr}`;
   try {
     await chrome.storage.session.remove(key);
   } catch (_) {
