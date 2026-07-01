@@ -1,0 +1,55 @@
+
+
+
+{
+    "manifest_version": 3,
+    "name": "Tab Rot", 
+    "version" : "1.0.0" ,
+
+    "description" : "A fun a simple way to see inactive tabs",
+    
+    
+    "action": {
+        "default_title": "Click to view a popup" ,
+        "default_popup": "options.html"
+    },
+    "background": {
+        "service_worker": "background.js",
+        "type": "module"
+    },
+    
+
+    "permissions": [
+    "tabs",
+    "activeTab",
+    "scripting",
+    "storage",
+    "sessions"
+    ],
+
+    "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+    ] ,
+
+   "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+
+  "web_accessible_resources": [
+    {
+      "resources": ["image/*.png"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+
+}
