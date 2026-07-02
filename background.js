@@ -1,8 +1,8 @@
-let fresh = 30*1000;
-let infection = 45*1000;
-let decay = 60*1000;
-let rotten = 75*1000;
-let recover = 5*1000;
+let fresh = 120000;
+let infection = 1800000;
+let decay = 10800000;
+let rotten = 86400000;
+let recover = 5000;
 
 const STORAGE_KEY_PREFIX = "tab_origin_";
 const SESSION_RESTORE_WINDOW_MS = 4000; // ms after startup to treat new tabs as "restart"
