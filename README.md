@@ -11,11 +11,11 @@
 <p>The background script periodically checks all tabs and computes a state from the elapsed time:</p>
 
 <ul>
-  <li><strong>TS_START</strong>: brand new tab.</li>
-  <li><strong>TS_FRESH</strong>: recently opened.</li>
-  <li><strong>TS_INFECTION</strong>: has been open for a while.</li>
-  <li><strong>TS_DECAY</strong>: has been idle a long time.</li>
-  <li><strong>TS_ROTTEN</strong>: very old tab.</li>
+  <li><strong>START</strong>: brand new tab.</li>
+  <li><strong>FRESH</strong>: recently opened.</li>
+  <li><strong>INFECTION</strong>: has been open for a while.</li>
+  <li><strong>DECAY</strong>: has been idle a long time.</li>
+  <li><strong>ROTTEN</strong>: very old tab.</li>
 </ul>
 
 <p>When the state changes, the extension sends a message to the content script in that tab.</p>
