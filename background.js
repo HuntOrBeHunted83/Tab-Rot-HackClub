@@ -2,10 +2,13 @@ let fresh = 30*1000;
 let infection = 45*1000;
 let decay = 60*1000;
 let rotten = 75*1000;
-let recover = 10*1000;
+let recover = 5*1000;
 
 const STORAGE_KEY_PREFIX = "tab_origin_";
 const SESSION_RESTORE_WINDOW_MS = 4000; // ms after startup to treat new tabs as "restart"
+const THRESHOLDS_KEY = "thresholds";
+
+const HEARTBEAT_ALARM = "tabDecayHeartbeat";
 
 const TS_START = 0
 const TS_FRESH = 10;
@@ -13,31 +16,35 @@ const TS_INFECTION = 20;
 const TS_DECAY = 30;
 const TS_ROTTEN = 40;
 const TS_RECOVER = 50;
-
+let thresholdsReady = loadThresholds(); 
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name === "sendVariableValues") {
-    port.onMessage.addListener((msg) => {
+    port.onMessage.addListener(async (msg) => {   // now async
       console.log("Received:", msg);
 
       fresh = Number(msg.fresh);
       infection = Number(msg.infection);
       decay = Number(msg.decay);
       rotten = Number(msg.rotten);
+      recover = Number(msg.recover);
+
       console.log("onConnect ", fresh, infection, decay, rotten);
+
+      await saveThresholds();   // ADD THIS
     });
   }
 });
 
 function getState(openedTime, currentTime){
   let state
-  if (openedTime + rotten < currentTime){
+  if (openedTime + rotten <= currentTime){
     state = TS_ROTTEN
-  }else if (openedTime + decay < currentTime){
+  }else if (openedTime + decay <= currentTime){
     state = TS_DECAY
-  }else if (openedTime + infection < currentTime){
+  }else if (openedTime + infection <= currentTime){
     state = TS_INFECTION
-  }else if (openedTime + fresh < currentTime){
+  }else if (openedTime + fresh <= currentTime){
     state = TS_FRESH
   }else{
     state = TS_START
@@ -95,7 +102,6 @@ function getUrlHostname(url){
     return ""
   }
 }
-
 
  async function getOldestTabOpenTime(url){
 
@@ -224,6 +230,33 @@ async function getStorageSession(key) {
   }
 }
 
+async function loadThresholds() {
+  try {
+    const stored = await chrome.storage.local.get(THRESHOLDS_KEY);
+    const t = stored && stored[THRESHOLDS_KEY];
+    if (t) {
+      if (Number.isFinite(t.fresh)) fresh = t.fresh;
+      if (Number.isFinite(t.infection)) infection = t.infection;
+      if (Number.isFinite(t.decay)) decay = t.decay;
+      if (Number.isFinite(t.rotten)) rotten = t.rotten;
+      if (Number.isFinite(t.recover)) recover = t.recover;
+      console.log("[loadThresholds] Restored persisted thresholds:", t);
+    }
+  } catch (error) {
+    console.error("Failed to load persisted thresholds:", error);
+  }
+}
+
+async function saveThresholds() {
+  try {
+    await chrome.storage.local.set({
+      [THRESHOLDS_KEY]: { fresh, infection, decay, rotten, recover }
+    });
+  } catch (error) {
+    console.error("Failed to save thresholds:", error);
+  }
+}
+
 async function sendTabMessage(tabId, entries) {
   try {
     await chrome.tabs.sendMessage(tabId, entries)
@@ -245,13 +278,37 @@ class TabInfo{
         }
 }
 
-const checkInterval = setInterval(setTabState, 10000);
+let intervalHandle = null;
+
+function ensureIntervalRunning() {
+  if (intervalHandle === null) {
+    intervalHandle = setInterval(setTabState, 10000);
+    console.log("[ensureIntervalRunning] (re)started 10s polling interval");
+  }
+}
+
+chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 1 });
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === HEARTBEAT_ALARM) {
+    console.log("[onAlarm] Heartbeat fired, re-syncing state");
+    ensureIntervalRunning();
+    await setTabState();
+  }
+});
+
+// Start the interval immediately for this worker instance.
+ensureIntervalRunning();
+
 
 chrome.runtime.onStartup.addListener(async () => {
   
   let currentTime = Date.now()
   await setStorageSession({ startupTimestamp: currentTime});
   console.log("onStartup Browser startup time ", currentTime)
+  ensureIntervalRunning();
+
+
 });
 
 chrome.tabs.onActivated.addListener(async (activeInfo) => {  
